@@ -8,6 +8,12 @@
 #ifndef INC_TFT_8BIT_H_
 #define INC_TFT_8BIT_H_
 
+
+#ifdef __cplusplus
+extern "C"{
+#endif
+
+
 #include "stm32f4xx_hal.h"
 #include "stdint.h"
 #include "Font.h"
@@ -15,8 +21,8 @@
 #define USE_GUI
 #define USE_PRINT
 #define DRAW_BMP
-#define USE_EXTERNAL_FLASH
-#define USE_SD_CARD
+//#define USE_EXTERNAL_FLASH
+//#define USE_SD_CARD
 
 #ifdef USE_EXTERNAL_FLASH
   #include "W25Qxx.h"
@@ -104,4 +110,10 @@ class TFT_HandleTypeDef {
 		void  WriteCharNoBack(uint8_t numWrite, uint16_t x, uint16_t y, uint16_t color, const uint8_t *font, uint16_t num);
 	#endif
 };
+
+
+#ifdef __cplusplus
+}
+#endif
+
 #endif /* INC_TFT_8BIT_H_ */

@@ -25,6 +25,7 @@
 #define CS_N  0
 #define RESET_N 4
 
+
 //#define D0_PIN GPIO_PIN_0
 //#define D1_PIN GPIO_PIN_1
 //#define D2_PIN GPIO_PIN_2

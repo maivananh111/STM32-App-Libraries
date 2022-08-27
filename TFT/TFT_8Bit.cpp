@@ -12,6 +12,7 @@
 #include "TFT_8Bit.h"
 #include "Setting.h"
 
+//extern TIM_HandleTypeDef htim1;
 
 void PIN_LOW (GPIO_TypeDef* GPIOx, uint16_t GPIO_Pin){
 	GPIOx -> BSRR |= ((1<<GPIO_Pin)<<16);
@@ -20,51 +21,32 @@ void PIN_HIGH (GPIO_TypeDef* GPIOx, uint16_t GPIO_Pin){
 	GPIOx -> BSRR |= (1<<GPIO_Pin);
 }
 void PIN_INPUT (GPIO_TypeDef* GPIOx, uint16_t GPIO_Pin){
-	GPIO_InitTypeDef GPIO_InitStruct;
-	  GPIO_InitStruct.Pin = GPIO_Pin;
-	  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
-	  GPIO_InitStruct.Pull = GPIO_PULLUP;
-	  HAL_GPIO_Init(GPIOx, &GPIO_InitStruct);
+	GPIOx -> MODER &=~ (1<<(GPIO_Pin*2))|(1<<(GPIO_Pin*2 + 1));
+	GPIOx -> PUPDR &=~ (1<<(GPIO_Pin*2 + 1));
+	GPIOx -> PUPDR |=  (1<<(GPIO_Pin*2));
 }
 void PIN_OUTPUT (GPIO_TypeDef* GPIOx, uint16_t GPIO_Pin){
-	GPIO_InitTypeDef GPIO_InitStruct;
-	  GPIO_InitStruct.Pin = GPIO_Pin;
-	  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-	  GPIO_InitStruct.Pull = GPIO_NOPULL;
-	  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
-	  HAL_GPIO_Init(GPIOx, &GPIO_InitStruct);
+	GPIOx -> MODER |= (1<<(GPIO_Pin*2));
+	GPIOx -> OTYPER &=~ (1<<GPIO_Pin);
+	GPIOx -> OSPEEDR |= (1<<(GPIO_Pin*2))|(1<<(GPIO_Pin*2 + 1));
+	GPIOx -> PUPDR &=~ (1<<(GPIO_Pin*2))|(1<<(GPIO_Pin*2 + 1));
 }
 
-//#define RD_ACTIVE  PIN_LOW(CMD_PORT, RD_PIN)
-//#define RD_IDLE    PIN_HIGH(CMD_PORT, RD_PIN)
-//#define RD_OUTPUT  PIN_OUTPUT(CMD_PORT, RD_PIN)
-//#define WR_ACTIVE  PIN_LOW(CMD_PORT, WR_PIN)
-//#define WR_IDLE    PIN_HIGH(CMD_PORT, WR_PIN)
-//#define WR_OUTPUT  PIN_OUTPUT(CMD_PORT, WR_PIN)
-//#define CD_COMMAND PIN_LOW(CMD_PORT, CD_PIN)
-//#define CD_DATA    PIN_HIGH(CMD_PORT, CD_PIN)
-//#define CD_OUTPUT  PIN_OUTPUT(CMD_PORT, CD_PIN)
-//#define CS_ACTIVE  PIN_LOW(CMD_PORT, CS_PIN)
-//#define CS_IDLE    PIN_HIGH(CMD_PORT, CS_PIN)
-//#define CS_OUTPUT  PIN_OUTPUT(CMD_PORT, CS_PIN)
-//#define RESET_ACTIVE  PIN_LOW(CMD_PORT, RESET_PIN)
-//#define RESET_IDLE    PIN_HIGH(CMD_PORT, RESET_PIN)
-//#define RESET_OUTPUT  PIN_OUTPUT(CMD_PORT, RESET_PIN)
 #define RD_ACTIVE     PIN_LOW(CMD_PORT, RD_N)
 #define RD_IDLE       PIN_HIGH(CMD_PORT, RD_N)
-#define RD_OUTPUT     PIN_OUTPUT(CMD_PORT, RD_PIN)
+#define RD_OUTPUT     PIN_OUTPUT(CMD_PORT, RD_N)
 #define WR_ACTIVE     PIN_LOW(CMD_PORT, WR_N)
 #define WR_IDLE       PIN_HIGH(CMD_PORT, WR_N)
-#define WR_OUTPUT     PIN_OUTPUT(CMD_PORT, WR_PIN)
+#define WR_OUTPUT     PIN_OUTPUT(CMD_PORT, WR_N)
 #define CD_COMMAND    PIN_LOW(CMD_PORT, CD_N)
 #define CD_DATA       PIN_HIGH(CMD_PORT, CD_N)
-#define CD_OUTPUT     PIN_OUTPUT(CMD_PORT, CD_PIN)
+#define CD_OUTPUT     PIN_OUTPUT(CMD_PORT, CD_N)
 #define CS_ACTIVE     PIN_LOW(CMD_PORT, CS_N)
 #define CS_IDLE       PIN_HIGH(CMD_PORT, CS_N)
-#define CS_OUTPUT     PIN_OUTPUT(CMD_PORT, CS_PIN)
+#define CS_OUTPUT     PIN_OUTPUT(CMD_PORT, CS_N)
 #define RESET_ACTIVE  PIN_LOW(CMD_PORT, RESET_N)
 #define RESET_IDLE    PIN_HIGH(CMD_PORT, RESET_N)
-#define RESET_OUTPUT  PIN_OUTPUT(CMD_PORT, RESET_PIN)
+#define RESET_OUTPUT  PIN_OUTPUT(CMD_PORT, RESET_N)
 
 
 
@@ -103,7 +85,7 @@ void PIN_OUTPUT (GPIO_TypeDef* GPIOx, uint16_t GPIO_Pin){
 #define READ_8(dst)   { RD_STROBE; READ_DELAY; dst = read_8(); RD_IDLE; RD_IDLE; } // read 250ns after RD_ACTIVE goes low
 #define READ_16(dst)  { uint8_t hi; READ_8(hi); READ_8(dst); dst |= (hi << 8); }
 
-void CTL_INIT()       {
+void CTL_INIT()   {
 //	RD_OUTPUT; WR_OUTPUT; CD_OUTPUT; CS_OUTPUT; RESET_OUTPUT;
 	CMD_PORT -> MODER |=   (1<<(CS_N*2))
 						 |(1<<(CD_N*2))
@@ -152,11 +134,7 @@ static void delay (uint16_t time){
 	__HAL_TIM_SET_COUNTER(Timer, 0);
 	while ((__HAL_TIM_GET_COUNTER(Timer))<time);
 }
-static void delay_ms(uint16_t time){
-	for(uint16_t i=0; i<time; i++){
-		delay(1000);
-	}
-}
+
 uint16_t _width    = WIDTH;
 uint16_t _height   = HEIGHT;
 
@@ -197,19 +175,25 @@ uint16_t  _lcd_xor, _lcd_capable;
 uint16_t _lcd_ID, _lcd_rev, _lcd_madctl, _lcd_drivOut, _MC, _MP, _MW, _SC, _EC, _SP, _EP;
 
 void setReadDir (void){
-	GPIO_InitTypeDef GPIO_InitStruct;
-	  GPIO_InitStruct.Pin = D0_PIN|D1_PIN|D2_PIN|D3_PIN|D4_PIN|D5_PIN|D6_PIN|D7_PIN;
-	  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
-	  GPIO_InitStruct.Pull = GPIO_PULLUP;
-	  HAL_GPIO_Init(DATA_PORT, &GPIO_InitStruct);
+	DATA_PORT -> MODER &= ~((1<<(D0_N*2))|(1<<(D0_N*2 + 1))
+						   |(1<<(D1_N*2))|(1<<(D1_N*2 + 1))
+						   |(1<<(D2_N*2))|(1<<(D2_N*2 + 1))
+						   |(1<<(D3_N*2))|(1<<(D3_N*2 + 1))
+						   |(1<<(D4_N*2))|(1<<(D4_N*2 + 1))
+						   |(1<<(D5_N*2))|(1<<(D5_N*2 + 1))
+						   |(1<<(D6_N*2))|(1<<(D6_N*2 + 1))
+						   |(1<<(D7_N*2))|(1<<(D7_N*2 + 1)));
+
+	DATA_PORT -> PUPDR |= (1<<(D0_N*2))
+						 |(1<<(D1_N*2))
+						 |(1<<(D2_N*2))
+						 |(1<<(D3_N*2))
+						 |(1<<(D4_N*2))
+						 |(1<<(D5_N*2))
+						 |(1<<(D6_N*2))
+						 |(1<<(D7_N*2));
 }
 void setWriteDir (void){
-//	GPIO_InitTypeDef GPIO_InitStruct;
-//	  GPIO_InitStruct.Pin = D0_PIN|D1_PIN|D2_PIN|D3_PIN|D4_PIN|D5_PIN|D6_PIN|D7_PIN;
-//	  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-//	  GPIO_InitStruct.Pull = GPIO_NOPULL;
-//	  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
-//	  HAL_GPIO_Init(DATA_PORT, &GPIO_InitStruct);
 	DATA_PORT -> MODER |=       (1<<(D0_N*2))
 							 |(1<<(D1_N*2))
 							 |(1<<(D2_N*2))
@@ -243,6 +227,26 @@ void setWriteDir (void){
 							 |(1<<(D6_N*2))|(1<<(D6_N*2 + 1))
 							 |(1<<(D7_N*2))|(1<<(D7_N*2 + 1));
 }
+
+void TFT_HandleTypeDef::Enable(void){
+	CS_ACTIVE;
+}
+
+void TFT_HandleTypeDef::Disable(void){
+	CS_IDLE;
+}
+
+void TFT_HandleTypeDef::WriteEnable(void){
+	WriteCmd(_MW);
+}
+
+void TFT_HandleTypeDef::DataWriteS(uint16_t *data, uint32_t size){
+    for (uint32_t i=0; i<size; i++ ) {
+	  write8(data[i]>>8);
+	  write8(data[i]);
+    }
+}
+
 static void pushColors_any(uint16_t cmd, uint8_t * block, int16_t n, uint8_t first, uint8_t flags){
     uint16_t color;
     uint8_t h, l;
@@ -486,7 +490,11 @@ void TFT_HandleTypeDef::ReadGRAM(int16_t x, int16_t y, uint16_t block[], int16_t
 	setWriteDir();
 	setAddrWindow(0, 0, width() - 1, height() - 1);
 }
-
+uint16_t TFT_HandleTypeDef::ReadPixel(int16_t x, int16_t y){
+	uint16_t GRAM[1];
+	ReadGRAM(x, y, GRAM, 1, 1);
+	return GRAM[0];
+}
 void TFT_HandleTypeDef::setRotation(uint8_t r){
    uint16_t GS, SS_v, ORG, REV = _lcd_rev;
    uint8_t val, d[3];
@@ -675,6 +683,17 @@ void TFT_HandleTypeDef::setRotation(uint8_t r){
    setAddrWindow(0, 0, width() - 1, height() - 1);
    vertScroll(0, HEIGHT, 0);   //reset scrolling after a rotation
 }
+void TFT_HandleTypeDef::drawPixel(int16_t x, int16_t y, uint16_t color){
+   if (x < 0 || y < 0 || x >= width() || y >= height())
+       return;
+#if defined(SUPPORT_9488_555)
+   if (is555) color = color565_to_555(color);
+#endif
+   setAddrWindow(x, y, x, y);
+   if (is9797) { CS_ACTIVE; WriteCmd(_MW); write24(color); CS_IDLE;} else
+   WriteCmdData(_MW, color);
+}
+
 void TFT_HandleTypeDef::setAddrWindow(int16_t x, int16_t y, int16_t x1, int16_t y1){
 #if defined(OFFSET_9327)
 	if (_lcd_ID == 0x9327) {
@@ -716,7 +735,6 @@ void TFT_HandleTypeDef::setAddrWindow(int16_t x, int16_t y, int16_t x1, int16_t 
        }
    }
 }
-
 void TFT_HandleTypeDef::vertScroll(int16_t top, int16_t scrollines, int16_t offset){
 #if defined(OFFSET_9327)
 	if (_lcd_ID == 0x9327) {
@@ -789,6 +807,18 @@ void TFT_HandleTypeDef::vertScroll(int16_t top, int16_t scrollines, int16_t offs
         break;
     }
 }
+void TFT_HandleTypeDef::pushColors(uint16_t * block, int16_t n, uint8_t first){
+    pushColors_any(_MW, (uint8_t *)block, n, first, 0);
+}
+void TFT_HandleTypeDef::pushColors(uint8_t * block, int16_t n, uint8_t first){
+    pushColors_any(_MW, (uint8_t *)block, n, first, 2);   //regular bigend
+}
+void TFT_HandleTypeDef::pushColors(const uint8_t * block, int16_t n, uint8_t first, uint8_t bigend){
+    pushColors_any(_MW, (uint8_t *)block, n, first, bigend ? 3 : 1);
+}
+void TFT_HandleTypeDef::fillScreen(uint16_t color){
+    fillRect(0, 0, _width, _height, color);
+}
 void TFT_HandleTypeDef::invertDisplay(uint8_t i){
     uint8_t val;
     _lcd_rev = ((_lcd_capable & REV_SCREEN) != 0) ^ i;
@@ -828,34 +858,6 @@ void TFT_HandleTypeDef::invertDisplay(uint8_t i){
         WriteCmdData(0x61, _lcd_rev);
         break;
     }
-}
-void TFT_HandleTypeDef::drawPixel(int16_t x, int16_t y, uint16_t color){
-   if (x < 0 || y < 0 || x >= width() || y >= height())
-       return;
-#if defined(SUPPORT_9488_555)
-   if (is555) color = color565_to_555(color);
-#endif
-   setAddrWindow(x, y, x, y);
-   if (is9797) { CS_ACTIVE; WriteCmd(_MW); write24(color); CS_IDLE;} else
-   WriteCmdData(_MW, color);
-}
-uint16_t TFT_HandleTypeDef::ReadPixel(int16_t x, int16_t y){
-	uint16_t GRAM[1];
-	ReadGRAM(x, y, GRAM, 1, 1);
-	return GRAM[0];
-}
-#ifdef USE_GUI/*/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////*/
-void TFT_HandleTypeDef::pushColors(uint16_t * block, int16_t n, uint8_t first){
-    pushColors_any(_MW, (uint8_t *)block, n, first, 0);
-}
-void TFT_HandleTypeDef::pushColors(uint8_t * block, int16_t n, uint8_t first){
-    pushColors_any(_MW, (uint8_t *)block, n, first, 2);   //regular bigend
-}
-void TFT_HandleTypeDef::pushColors(const uint8_t * block, int16_t n, uint8_t first, uint8_t bigend){
-    pushColors_any(_MW, (uint8_t *)block, n, first, bigend ? 3 : 1);
-}
-void TFT_HandleTypeDef::fillScreen(uint16_t color){
-    fillRect(0, 0, _width, _height, color);
 }
 
 void  TFT_HandleTypeDef::drawFastVLine(int16_t x, int16_t y, int16_t h, uint16_t color){
@@ -1155,28 +1157,6 @@ void TFT_HandleTypeDef::fillTriangle(int16_t x0, int16_t y0, int16_t x1, int16_t
         drawFastHLine(a, y, b-a+1, color);
     }
 }
-void TFT_HandleTypeDef::scrollup (uint16_t speed){
-     uint16_t maxscroll;
-     if (getRotation() & 1) maxscroll = width();
-     else maxscroll = height();
-     for (uint16_t i = 1; i <= maxscroll; i++){
-          vertScroll(0, maxscroll, i);
-         if (speed < 655) delay(speed*100);
-         else delay_ms(speed);
-     }
-}
-void TFT_HandleTypeDef::scrolldown (uint16_t speed){
-	uint16_t maxscroll;
-	if (getRotation() & 1) maxscroll = width();
-	     else maxscroll = height();
-	for (uint16_t i = 1; i <= maxscroll; i++){
-		vertScroll(0, maxscroll, 0 - (int16_t)i);
-		if (speed < 655) delay(speed*100);
-		else delay_ms(speed);
-	}
-}
-#endif
-#ifdef USE_PRINT
 void TFT_HandleTypeDef::WriteByteBack(uint16_t x, uint16_t y, uint16_t color, uint16_t B_color, uint8_t Char){
    for(uint8_t i=0; i<8; i++){
 		if(Char&(0x01)) {
@@ -1208,8 +1188,8 @@ void TFT_HandleTypeDef::WriteNByteBack(uint16_t x, uint16_t y, uint16_t color, u
 			write8(color);
 		}
 		 else {
-			write8(B_color>>8);
-			write8(B_color);
+			 write8(B_color>>8);
+			 write8(B_color);
 		 }
 		 Char<<=1;
 	 }
@@ -1241,62 +1221,6 @@ void TFT_HandleTypeDef::WriteCharNoBack(uint8_t numWrite, uint16_t x, uint16_t y
 		WriteByteNoBack(x, y+i*8, color, font[num+i]);
 	}
 }
-void TFT_HandleTypeDef::drawSmallBitmap(uint16_t x, uint16_t y, const uint8_t* bitmap, bool back, uint16_t color, uint16_t B_color, uint16_t w, uint16_t h){
-	uint8_t VAL = (h%2==0)? h/8 : (h/8)+1;
-	for (uint16_t z = 0; z < W; z++){
-	 if(back) WriteCharBack(VAL, x+z, y, color, B_color, bitmap, (z*VAL));
-	 else     WriteCharNoBack(VAL, x+z, y, color, bitmap, (z*VAL));
-	}
-}
-uint8_t TFT_HandleTypeDef::UTF8_GetAddr(char *utf8_char, char *char_offset){
-	*char_offset=1;
-	 if((*utf8_char)<UTF8_char_start2) //nếu đây là kí tự trong bản ascii
-	  return (*utf8_char);
-	 else {             //nếu đây là kí tự tiếng Việt có đấu
-	  uint32_t utf8_value=0;
-	  unsigned char temp = 0xF0 & (*utf8_char);
-	  if(temp == 0xC0) {//loại utf-8 2 byte
-	    *char_offset=2;
-	    utf8_value= (*utf8_char) << 8;
-	    utf8_value|=*(utf8_char+1);
-	  }
-	  else if(temp == 0xE0) {   //loại utf-8 3 byte
-	    *char_offset = 3;
-	    utf8_value= (*utf8_char) << 16;
-	    utf8_value|=*(utf8_char+1) << 8;
-	    utf8_value|=*(utf8_char+2);
-	  }
-	  else if(temp == 0xF0) {   //loại utf-8 4 byte
-	    *char_offset = 4;
-	    utf8_value= (*utf8_char) << 24;
-	    utf8_value|=*(utf8_char+1) << 16;
-	    utf8_value|=*(utf8_char+2) << 8;
-	    utf8_value|=*(utf8_char+3);
-	  }
-	  for(uint8_t i = 0; i < UTF8_table_size; i++){
-	      if(utf8_value == UTF8_Table[i]){
-	            if(i<UTF8_char_end1)
-	                return i+1;
-	            else
-	                return i + UTF8_char_start2 - UTF8_char_end1;
-	        }
-	  }
-	  return '?';
-	 }
-}
-void TFT_HandleTypeDef::draw_Viet_Char(uint16_t x, uint16_t y, const G_Font *font, bool back, uint16_t color, uint16_t B_color, uint8_t Num){
-	uint16_t i = x, j = y;
-	gfxFont = font;
-	W = gfxFont -> w;
-	H = gfxFont -> h;
-	VAL = gfxFont -> byte;
-	  uint8_t ascii = Num;
-	  int char_start  = (ascii * VAL * W) + 1 + ascii;
-		for (uint16_t z = 0; z < W; z++){
-		 if(back) WriteCharBack(VAL, i+z, j, color, B_color, gfxFont -> bitmap, (char_start + z*VAL));
-		 else     WriteCharNoBack(VAL, i+z, j, color, gfxFont -> bitmap, (char_start + z*VAL));
-		}
- }
 void TFT_HandleTypeDef::drawChar(uint16_t x, uint16_t y, const G_Font *font, bool back, uint16_t color, uint16_t B_color, char Char){
 	uint16_t i = x, j = y;
 	gfxFont = font;
@@ -1328,21 +1252,6 @@ void TFT_HandleTypeDef::print(uint16_t x, uint16_t y, const G_Font *font, bool b
       else {x = x + W;};
 	}
 }
-void TFT_HandleTypeDef::Viet_print(uint16_t x, uint16_t y, const G_Font *font, bool back, int16_t N_Color, int16_t B_Color, char *str) {
-	uint16_t i = x;
-	gfxFont = font;
-	W = gfxFont -> w;
-	H = gfxFont -> h;
-	char offset = 0;
-	uint8_t UTF8_addr;
-	  while(*str){
-		  if(x > (width()-W/2)){y += (H+5); x = i; }
-		  UTF8_addr = UTF8_GetAddr(str, &offset);
-		  draw_Viet_Char(x, y, font, back, N_Color, B_Color, UTF8_addr);
-		  str+=offset;
-          x = x + W;
-		}
-}
 void TFT_HandleTypeDef::print(uint16_t x, uint16_t y, const G_Font *font, bool back, int16_t N_Color, int16_t B_Color, float Num) {
 	char c[10];
 	sprintf(c, "%5.3f", Num);
@@ -1353,7 +1262,6 @@ void TFT_HandleTypeDef::print(uint16_t x, uint16_t y, const G_Font *font, bool b
      print(x, y, font, back, N_Color,B_Color, itoa(Num,c,10));
 }
 
-#endif
 #ifdef DRAW_BMP
 void TFT_HandleTypeDef::drawBitmap(uint16_t x, uint16_t y, const uint8_t* bitmap, bool back, uint16_t color, uint16_t B_color, uint16_t w, uint16_t h) {
 	 for (int16_t j=0; j<h; j++) {
@@ -1385,6 +1293,7 @@ void TFT_HandleTypeDef::drawRGBBitmap(uint16_t x, uint16_t y, const uint16_t* bi
        setAddrWindow(0, 0, width() - 1, height() - 1);
 }
 #endif
+
 #ifdef USE_EXTERNAL_FLASH
 	void TFT_HandleTypeDef::drawRGBbitmapInFlash(W25Q w25q, uint32_t Sector_OffSet_Addr, uint16_t x, uint16_t y, uint16_t w, uint16_t h) {
 		 uint32_t addr = Sector_OffSet_Addr;
@@ -1417,9 +1326,8 @@ void TFT_HandleTypeDef::drawRGBBitmap(uint16_t x, uint16_t y, const uint16_t* bi
 		 uint32_t tmpcolor;
 		 uint16_t color[width];
 		 uint8_t *bufbmp = NULL;
-				if( f_open(&MyFile, s, FA_READ) != FR_OK){
-					char x[40];
-					strcpy(x, "ERROR Open file ");
+				if(f_open(&MyFile, s, FA_READ) != FR_OK){
+					char *x = (char *)"ERROR Open file ";
 					strcat(x, s);
 					print(10, 10, &Font_Terminal8x12, true, RED, BLACK, x);
 				}
@@ -1505,27 +1413,27 @@ void TFT_HandleTypeDef::drawRGBBitmap(uint16_t x, uint16_t y, const uint16_t* bi
 	}
   #endif
 #endif
-void TFT_HandleTypeDef::DataWrite(uint16_t data){
-    write8(data>>8);
-    write8(data);
+uint8_t TFT_HandleTypeDef::getRotation (void){return rotation;}
+void TFT_HandleTypeDef::scrollup (uint16_t speed){
+     uint16_t maxscroll;
+     if (getRotation() & 1) maxscroll = width();
+     else maxscroll = height();
+     for (uint16_t i = 1; i <= maxscroll; i++){
+          vertScroll(0, maxscroll, i);
+         if (speed < 655) delay(speed*100);
+         else HAL_Delay(speed);
+     }
 }
-void TFT_HandleTypeDef::DataWriteS(uint16_t *data, uint32_t size){
-	for(uint32_t i=0; i<size; i++){
-		write8(data[i]>>8);
-		write8(data[i]);
+void TFT_HandleTypeDef::scrolldown (uint16_t speed){
+	uint16_t maxscroll;
+	if (getRotation() & 1) maxscroll = width();
+	     else maxscroll = height();
+	for (uint16_t i = 1; i <= maxscroll; i++){
+		vertScroll(0, maxscroll, 0 - (int16_t)i);
+		if (speed < 655) delay(speed*100);
+		else HAL_Delay(speed);
 	}
 }
-void TFT_HandleTypeDef::WriteEnable(void){
-    WriteCmd(_MW);
-}
-void TFT_HandleTypeDef::Enable(void){
-	CS_ACTIVE;
-}
-void TFT_HandleTypeDef::Disable(void){
-	CS_IDLE;
-}
-
-uint8_t TFT_HandleTypeDef::getRotation (void){return rotation;}
 void TFT_HandleTypeDef::Init(uint16_t ID){
 	int dummy=0;
     int16_t *p16;               //so we can "write" to a const protected variable.
@@ -1733,7 +1641,6 @@ void TFT_HandleTypeDef::Init(uint16_t ID){
             0xE2, 1, 0x3F,      //Command Write Access
             0xC0, 1, 0x22,      //REV=0, BGR=1, SS=0
             0xE2, 1, 0x00,      //Command Write Protect
-			0x3A, 1, 0x55,
         };
         table8_ads = R61526_regValues, table_size = sizeof(R61526_regValues);
         break;
